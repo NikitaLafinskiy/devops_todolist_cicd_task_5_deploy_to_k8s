@@ -7,7 +7,6 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
-  workflow_dispatch:
 
 env:
   PythonVersion: 3.8
@@ -16,6 +15,7 @@ env:
 jobs:
   python-ci:
     runs-on: ubuntu-latest
+    name: Python CI
     defaults:
       run:
         working-directory: ./src
@@ -62,7 +62,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: helm-artifacts
-          path: ${{ github.workspace }}/helm-charts
+          path: ./helm-charts
+
+      - name: Upload cluster configs
+        uses: actions/upload-artifact@v4
+        with:
+          name: cluster-artifact
+          path: ./cluster.yml
 
   docker-ci:
     name: Build and Push Image
@@ -97,7 +103,8 @@ jobs:
     name: Helm CI
     steps:
 
-    - uses: actions/download-artifact@v4
+    - name: Download helm-artifacts
+      uses: actions/download-artifact@v4
       with:
         name: helm-artifacts
         path: .
@@ -120,19 +127,23 @@ jobs:
         name: helm-package
         path: ./*.tgz
 
-  dev-deployment-helm:
-    name: Development deployment Helm
-    uses: ./.github/workflows/deployment-workflow.yml
-    needs: [docker-ci, helm-ci]
+  deploy-helm-development:
+    name: deploy development
+    uses: ./.github/workflows/helm-deploy.yml
+    needs: [helm-ci, docker-ci]
     secrets: inherit
     with:
       environment: development
+      version: ${{ github.sha }}
+      helm-release-name: todoapp-development
 
-  staging-deployment-helm:
-    name: Staging deployment Helm
-    uses: ./.github/workflows/deployment-workflows.yml
-    needs: dev-deployment-helm
-    secrets:  inherit
+  deploy-helm-staging:
+    name: deploy staging
+    uses: ./.github/workflows/helm-deploy.yml
+    needs: deploy-helm-development
+    secrets: inherit
     with:
       environment: staging
-      helm-values-path: ./values/stg.yml
+      version: ${{ github.sha }}
+      helm-release-name: todoapp-staging
+      helm-values-path: ./todoapp/values/stg.yaml
