@@ -1,0 +1,70 @@
+name: Deployment workflow
+run-name: ${{ github.actor }} - ${{ github.sha }}
+
+on:
+    workflow_call:
+        inputs:
+            environment:
+                required: true
+                description: "Deployment environment"
+                type: string
+            helm-values-path:
+                required: false
+                description: "Helm values.yml path"
+                type: string
+                default: ./values.yml
+
+jobs:
+  deploy-helm:
+    name: Deploy Helm
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: helm-package
+          path: .
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4.2.0
+
+      - name: Setup KubeCTL
+        uses: azure/setup-kubectl@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        name: Configure AWS credentials
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Configure Kubernetes client
+        uses: silverlyra/setup-aws-eks@v0.1
+        with:
+          cluster: happy-metal-rainbow
+
+      - name: Deploy Helm to Development
+        run: |
+          helm upgrade --install --atomic --wait --timeout 3600s --debug todoapp ./*.tgz \
+          -f ${{ inputs.helm-values-path }}
+          --set todoapp.secrets.DB_NAME=${{ secrets.TODOAPP_DB_NAME }} \
+          --set todoapp.secrets.DB_USER=${{ secrets.TODOAPP_DB_USER }} \
+          --set todoapp.secrets.DB_PASSWORD=${{ secrets.TODOAPP_DB_PASSWORD }} \
+          --set todoapp.secrets.DB_HOST=${{ secrets.TODOAPP_DB_HOST }} \
+          --set mysql.secrets.MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }} \
+          --set mysql.secrets.MYSQL_USER=${{ secrets.MYSQL_USER }} \
+          --set mysql.secrets.MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }} \
+          --set todoapp.image.tag=${{ github.sha }} \
+
+      # - uses: bitovi/github-actions-deploy-eks-helm@v1.2.12
+      #   with:
+      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: ${{ vars.AWS_REGION }}
+      #     cluster-name: happy-metal-rainbow
+      #     config-files: .github/values/dev.yaml
+      #     chart-path: ./*.tgz
+      #     namespace: dev
+      #     name: todoapp
+
